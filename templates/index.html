@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Packet Sniffer -- Upload{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-3">Analyze a pcap file</h1>
+        <p class="text-secondary">
+          Upload a <code>.pcap</code>, <code>.pcapng</code>, or <code>.cap</code> capture file to see a
+          packet summary, scan for credential-like keywords in raw payloads, and inspect TCP/UDP layers
+          and IP source/destination addresses -- the same features as the command-line tool, in the browser.
+        </p>
+        <form action="{{ url_for('analyze') }}" method="post" enctype="multipart/form-data" class="mt-4">
+          <div class="mb-3">
+            <label for="pcap_file" class="form-label">Capture file</label>
+            <input class="form-control" type="file" id="pcap_file" name="pcap_file" accept=".pcap,.pcapng,.cap" required>
+            <div class="form-text text-secondary">No sample file? Generate one with <code>python make_sample_pcap.py</code>.</div>
+          </div>
+          <button type="submit" class="btn btn-primary">Analyze</button>
+        </form>
+      </div>
+    </div>
+    <p class="text-secondary small mt-3">
+      Prefer the terminal? Run <code>python sniffer.py path/to/file.pcap</code> for the original interactive CLI.
+    </p>
+  </div>
+</div>
+{% endblock %}

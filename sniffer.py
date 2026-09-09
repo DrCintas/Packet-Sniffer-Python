@@ -1,77 +1,107 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
-from scapy.all import *
-from scapy.layers.http import *
+import os
+import sys
 
-#look at the entire pcap file
+import packet_analyzer as pa
+
+
+def resolve_pcap_path():
+    """Resolve the pcap path from argv[1], PCAP_PATH env var, or an interactive prompt.
+
+    The original script hardcoded 'C:/example/example.pcap', which only ever
+    worked on the author's own Windows machine and had no sample file checked
+    into the repo. This keeps the same interactive feel but makes it actually
+    runnable anywhere.
+    """
+    if len(sys.argv) > 1:
+        return sys.argv[1]
+    if os.environ.get("PCAP_PATH"):
+        return os.environ["PCAP_PATH"]
+    default = os.path.join(os.path.dirname(os.path.abspath(__file__)), "samples", "sample.pcap")
+    prompt = f"Path to a .pcap file to analyze [{default}]: "
+    entered = input(prompt).strip()
+    return entered or default
+
+
 def check_pcap(packets):
-	packets.summary()
+    for line in pa.get_summary(packets):
+        print(line)
 
-#Look for usernames and passwords
+
 def search_credentials(packets):
-	counter = 0
-	for pkt in packets:
-		counter = counter + 1
-		if pkt.haslayer(scapy.all.Raw):		#Checking if the Raw layer is present
-			load = pkt[scapy.all.Raw].load		#Load field contains a lot of information like credentials
-			keywords = ["login", "password", "username", "user", "pass"]
-			for keyword in keywords:
-				if bytes(keyword, 'utf-8') in load:
-					print("Found a login at packet", counter-1, ": ", load)
+    findings = pa.search_credentials(packets)
+    if not findings:
+        print("No credential-like keywords found.")
+    for finding in findings:
+        print("Found a login at packet", finding["packet"], ": ", finding["data"])
 
-#Search the IP source of a packet
+
 def search_IP_src(packets, num_packet):
-	print(num_packet, "packet IP source address: ", packets[num_packet][IP].src)
+    src = pa.get_ip_src(packets, num_packet)
+    if src is None:
+        print(num_packet, "packet has no IP layer")
+    else:
+        print(num_packet, "packet IP source address: ", src)
 
-#Search the IP destination of a packet
+
 def search_IP_dst(packets, num_packet):
-	print(num_packet, "packet IP destination address: ", packets[num_packet][IP].dst)
+    dst = pa.get_ip_dst(packets, num_packet)
+    if dst is None:
+        print(num_packet, "packet has no IP layer")
+    else:
+        print(num_packet, "packet IP destination address: ", dst)
 
-#Check packets with TCP or UDP layers
+
 def search_TCP_UDP(packets, choice_TU):
-	count = 0
-	if (choice_TU == "TCP"):
-		for pkt in packets:
-			count = count + 1
-			if pkt.haslayer(TCP):
-				response_sequence_number = pkt[TCP].seq
-				response_acknowledgement_number = pkt[TCP].ack
-				response_timestamp = pkt[TCP].time
-				print("Packet", count-1, "---> Response seq: " + str(response_sequence_number) + " ack: " + str(response_acknowledgement_number) + " timestamp: " + str(response_timestamp))
-	if (choice_TU == "UDP"):
-		for pkt in packets:
-			count = count + 1
-			if pkt.haslayer(UDP):
-				response_payload = pkt[UDP].payload
-				response_timestamp = pkt[UDP].time
-				print("Packet", count-1, "---> Payload: " + str(response_payload) + " timestamp: " + str(response_timestamp))
-		else:
-			print("No packets with TCP/UDP layers")
+    results = pa.search_tcp_udp(packets, choice_TU)
+    if not results:
+        print(f"No packets with a {choice_TU.upper()} layer")
+        return
+    if choice_TU.upper() == "TCP":
+        for r in results:
+            print(
+                "Packet",
+                r["packet"],
+                "---> Response seq: " + str(r["seq"]) + " ack: " + str(r["ack"]) + " timestamp: " + str(r["timestamp"]),
+            )
+    else:
+        for r in results:
+            print(
+                "Packet",
+                r["packet"],
+                "---> Payload: " + r["payload"] + " timestamp: " + str(r["timestamp"]),
+            )
 
-if __name__ == '__main__':
-	packets = rdpcap('C:/example/example.pcap')
-	while(1):
-		print("\nWELCOME TO PACKET SNIFFER WITH PYTHON!")
-		print("---------------------------------------------------\n")
-		print("1) Check the entire pcap file\n2) Look for login usernames or passwords\n3) Check the IP source address of a specific packet")
-		print("4) Check the IP destination address of a specific packet\n5) Search which packets have a TCP or UDP layer\n6) Exit")
-		pick = input("Please pick a number to choose what you want to do: ")
-		if (pick == "1"):
-			check_pcap(packets)
-		elif (pick == "2"):
-			search_credentials(packets)
-		elif (pick == "3"):
-			number_packet_ip_src = input("Write the number of the packet that you want to know its IP source (starting from 0): ")
-			num_packet_src = int(number_packet_ip_src)
-			search_IP_src(packets, num_packet_src)
-		elif (pick == "4"):
-			number_packet_ip_dst = input("Write the number of the packet that you want to know its IP destination (starting from 0): ")
-			num_packet_dst = int(number_packet_ip_dst)
-			search_IP_dst(packets, num_packet_dst)
-		elif (pick == "5"):
-			TCP_UDP = input("Which layers are you looking for? (TCP or UDP): ")
-			search_TCP_UDP(packets, TCP_UDP)
-		elif (pick == "6"):
-			break
-		else:
-			print("Please pick a number between 1 and 6")
+
+if __name__ == "__main__":
+    pcap_path = resolve_pcap_path()
+    try:
+        packets = pa.load_pcap(pcap_path)
+    except Exception as exc:
+        print(f"Could not read pcap file '{pcap_path}': {exc}")
+        sys.exit(1)
+
+    while True:
+        print("\nWELCOME TO PACKET SNIFFER WITH PYTHON!")
+        print("---------------------------------------------------\n")
+        print("1) Check the entire pcap file\n2) Look for login usernames or passwords\n3) Check the IP source address of a specific packet")
+        print("4) Check the IP destination address of a specific packet\n5) Search which packets have a TCP or UDP layer\n6) Exit")
+        pick = input("Please pick a number to choose what you want to do: ")
+        if pick == "1":
+            check_pcap(packets)
+        elif pick == "2":
+            search_credentials(packets)
+        elif pick == "3":
+            number_packet_ip_src = input("Write the number of the packet that you want to know its IP source (starting from 0): ")
+            search_IP_src(packets, int(number_packet_ip_src))
+        elif pick == "4":
+            number_packet_ip_dst = input("Write the number of the packet that you want to know its IP destination (starting from 0): ")
+            search_IP_dst(packets, int(number_packet_ip_dst))
+        elif pick == "5":
+            TCP_UDP = input("Which layers are you looking for? (TCP or UDP): ")
+            search_TCP_UDP(packets, TCP_UDP)
+        elif pick == "6":
+            break
+        else:
+            print("Please pick a number between 1 and 6")
